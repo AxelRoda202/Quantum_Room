@@ -22,71 +22,64 @@ class FuncionOndaCuantica:
         self.activo = False
         self.tiempo_expansion = 0.0
         
-        # Configuraciones
-        self.radio_maximo = 10.0
-        self.cantidad_particulas = 100 # Menos entidades, pero más grandes y volumétricas
-        self.velocidad_expansion = 12.0
+        # Geometría de la "dona"
+        self.radio_minimo = 2.0  # El hueco central vacío
+        self.radio_maximo = 12.0 # El borde exterior de la dona
+        self.cantidad_particulas = 150 # Más cubos para rellenar la zona
+        self.velocidad_expansion = 15.0
         
-        # El NÚCLEO CUÁNTICO (Esfera central)
+        # El núcleo que reemplaza al jugador
         self.nucleo = Entity(
             model='sphere',
             color=color.magenta,
             scale=0.8,
-            enabled=False # Apagado por defecto
+            enabled=False,
+            unlit=True # CLAVE: Evita que las sombras lo apaguen
         )
         self.nucleo.setTransparency(TransparencyAttrib.MAlpha, 1)
 
     def activar(self):
-        if self.activo: return # Seguro para no generar entidades infinitas si dejas apretada la tecla
-        
+        if self.activo: return
         self.activo = True
         self.tiempo_expansion = 0.0
         
-        # 1. DESAPARECER ROBOT Y ENCENDER NÚCLEO
         self.origen.visible = False
         for b in self.brazos: b.visible = False
-        
         self.nucleo.enabled = True
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        # 2. GENERAR NUBE DE PROBABILIDAD (CUBOS)
+        # GENERAR LA DONA ESTÁTICA
         for i in range(self.cantidad_particulas):
-            angulo = random.uniform(0, 360) # Distribución en todos los ángulos
+            # Distribuir aleatoriamente entre el radio interior y exterior
+            distancia_centro = random.uniform(self.radio_minimo, self.radio_maximo)
+            angulo = random.uniform(0, math.pi * 2)
             
-            dir_x = math.cos(math.radians(angulo))
-            dir_z = math.sin(math.radians(angulo))
-            direccion = Vec3(dir_x, 0, dir_z)
+            # Coordenadas polares a cartesianas (X, Z)
+            offset_x = math.cos(angulo) * distancia_centro
+            offset_z = math.sin(angulo) * distancia_centro
             
             cubo = Entity(
                 model='cube',
-                position=self.nucleo.position,
-                scale=1
+                scale=Vec3(1.5, 0.1, 1.5), # Chatitos por defecto
+                unlit=True, # CLAVE: Los colores se verán puros, sin sombras oscuras
+                enabled=False # Los apagamos hasta que la onda los toque para ahorrar FPS
             )
             cubo.setTransparency(TransparencyAttrib.MAlpha, 1)
             cubo.setDepthWrite(False)
             
-            # Cada cubo viaja a una velocidad ligeramente distinta para dar efecto de "nube"
-            velocidad_propia = self.velocidad_expansion * random.uniform(0.6, 1.2)
-            
             self.particulas.append({
                 'entidad': cubo,
-                'direccion': direccion,
-                'distancia_actual': 0.0,
-                'velocidad': velocidad_propia,
-                'fase': random.uniform(0, math.pi * 2),
-                'choco_pared': False # ¡El flag de optimización!
+                'distancia_centro': distancia_centro,
+                'fase': random.uniform(0, math.pi), # Desfase para que no suban todos igual
+                'offset': Vec3(offset_x, 0, offset_z)
             })
 
     def desactivar(self):
         if not self.activo: return
         self.activo = False
-        
-        # 1. DESTRUIR CUBOS
-        for p in self.particulas:
-            destroy(p['entidad'])
+        for p in self.particulas: destroy(p['entidad'])
         self.particulas.clear()
         
-        # 2. APAGAR NÚCLEO Y REAPARECER ROBOT
         self.nucleo.enabled = False
         self.origen.visible = True
         for b in self.brazos: b.visible = True
@@ -95,52 +88,48 @@ class FuncionOndaCuantica:
         if not self.activo: return
         self.tiempo_expansion += dt
         
-        # El núcleo palpita rítmicamente
+        # Animación del núcleo
         self.nucleo.scale = 0.8 + (math.sin(self.tiempo_expansion * 8) * 0.15)
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
+        # El radio "pico" de la onda de energía actual
+        radio_energia = self.radio_minimo + (self.tiempo_expansion * self.velocidad_expansion)
+        
         for p in self.particulas:
             entidad = p['entidad']
+            dist = p['distancia_centro']
             
-            # --- OPTIMIZACIÓN DE RAYCAST ---
-            # Solo calculamos choques si el cubo aún no ha tocado una pared
-            if not p['choco_pared']:
-                distancia_objetivo = self.tiempo_expansion * p['velocidad']
-                distancia_objetivo = min(distancia_objetivo, self.radio_maximo)
+            # Mantener la dona relativa a la posición del núcleo
+            entidad.x = self.nucleo.x + p['offset'].x
+            entidad.z = self.nucleo.z + p['offset'].z
+            
+            # Calcular si la ola de energía está pasando por este cubo
+            # ancho_ola determina qué tan "grueso" es el anillo de luz intenso
+            ancho_ola = 4.0 
+            distancia_a_la_ola = abs(radio_energia - dist)
+            
+            if distancia_a_la_ola < ancho_ola:
+                # 1.0 (en el pico) a 0.0 (en los bordes de la ola)
+                intensidad = 1.0 - (distancia_a_la_ola / ancho_ola)
                 
-                rayo = raycast(self.nucleo.position, p['direccion'], distance=distancia_objetivo, ignore=(self.origen, self.nucleo))
+                # Variación rápida para el efecto "ecualizador"
+                fluctuacion = (math.sin(self.tiempo_expansion * 12.0 + p['fase']) + 1) * 0.5
                 
-                if rayo.hit:
-                    p['distancia_actual'] = rayo.distance
-                    p['choco_pared'] = True # Apaga el raycast para este cubo el resto del tiempo
-                else:
-                    p['distancia_actual'] = distancia_objetivo
-            
-            # Mover el cubo
-            entidad.position = self.nucleo.position + (p['direccion'] * p['distancia_actual'])
-            
-            # --- CÁLCULO DE PROBABILIDAD VISUAL ---
-            # Probabilidad de 1.0 (centro) a 0.0 (borde máximo)
-            probabilidad = 1.0 - (p['distancia_actual'] / self.radio_maximo)
-            probabilidad = clamp(probabilidad, 0.01, 1.0)
-            
-            fluctuacion = math.sin(self.tiempo_expansion * 5.0 + p['fase'])
-            
-            # COLOR: Violeta claro en el centro (probabilidad alta), oscuro en el borde
-            rojo = int(100 + (100 * probabilidad))
-            azul = 255
-            # TRANSPARENCIA: Alta en el centro, casi invisible en los bordes
-            alfa = int(220 * probabilidad + (fluctuacion * 30))
-            alfa = clamp(alfa, 0, 255)
-            
-            entidad.color = color.rgba(rojo, 0, azul, alfa)
-            
-            # ESCALA: Cubos más grandes en el centro, se encogen al perder probabilidad
-            entidad.scale = 0.4 + (probabilidad * 1.0) + (fluctuacion * 0.2)
-            
-            # Le damos una ligera rotación 3D para que no parezcan estáticos
-            entidad.rotation_y += dt * 40
-            entidad.rotation_x += dt * 20
+                # ALTURA: Crecen hacia arriba
+                altura_nueva = 0.1 + (intensidad * 2.5) + (intensidad * fluctuacion * 1.5)
+                entidad.scale_y = altura_nueva
+                # Ajustar la posición Y para que la base del cubo se quede en el piso
+                entidad.y = self.nucleo.y - 0.5 + (altura_nueva / 2)
+                
+                # COLOR Y TRANSPARENCIA: Violeta claro -> Violeta oscuro
+                rojo = int(100 + (155 * intensidad))
+                alfa = int(20 + (235 * intensidad)) # De casi invisible a sólido
+                
+                entidad.color = color.rgba(rojo, 0, 255, alfa)
+                entidad.enabled = True
+            else:
+                # Si la ola ya pasó o no llegó, apagamos el cubo visualmente
+                entidad.enabled = False
 
 app = Ursina()
 
