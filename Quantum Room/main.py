@@ -7,6 +7,108 @@ from ursina.prefabs.editor_camera import EditorCamera
 from panda3d.core import TransparencyAttrib
 from ursina.shader import Shader
 from ursina.shaders import lit_with_shadows_shader
+
+# =============================================================================
+# CLASE: FUNCIÓN DE ONDA (NIEBLA CUÁNTICA)
+# =============================================================================
+
+class FuncionOndaCuantica:
+    def __init__(self, origen_entity):
+        self.origen = origen_entity
+        self.particulas = []
+        self.activo = False
+        self.tiempo_expansion = 0.0
+        
+        # Configuraciones de la onda
+        self.radio_maximo = 10.0
+        self.cantidad_particulas = 36 # Un rayo cada 10 grados
+        self.velocidad_expansion = 15.0
+        
+    def activar(self):
+        """Dispara la explosión de probabilidad"""
+        self.activo = True
+        self.tiempo_expansion = 0.0
+        
+        # 1. VISUALIZACIÓN: Crear las partículas de la niebla
+        for i in range(self.cantidad_particulas):
+            angulo = i * (360 / self.cantidad_particulas)
+            
+            # Calculamos el vector de dirección en un círculo (Trigonometría básica)
+            dir_x = math.cos(math.radians(angulo))
+            dir_z = math.sin(math.radians(angulo))
+            direccion = Vec3(dir_x, 0, dir_z)
+            
+            # Creamos el plano que simula la "niebla"
+            particula = Entity(
+                model='quad', # Un cuadrado simple
+                color=color.rgba(150, 0, 255, 100), # Violeta semitransparente
+                position=self.origen.position,
+                rotation_x=90, # Acostado sobre el piso
+                scale=0.1
+            )
+            
+            # Forzamos la transparencia de Panda3D para tu CPU
+            particula.setTransparency(TransparencyAttrib.MAlpha, 1)
+            particula.setDepthWrite(False) # Evita el Z-Fighting con el piso
+            
+            # Guardamos la partícula junto con su dirección y una "fase" aleatoria para la fluctuación
+            fase_aleatoria = random.uniform(0, math.pi)
+            self.particulas.append({
+                'entidad': particula,
+                'direccion': direccion,
+                'distancia_actual': 0.0,
+                'fase': fase_aleatoria
+            })
+            
+    def desactivar(self):
+        """Colapsa la función de onda (destruye la niebla)"""
+        self.activo = False
+        for p in self.particulas:
+            destroy(p['entidad'])
+        self.particulas.clear()
+
+    def actualizar(self, dt):
+        """Lógica de expansión, adaptación y fluctuación (se ejecuta en el update)"""
+        if not self.activo:
+            return
+            
+        self.tiempo_expansion += dt
+        
+        for p in self.particulas:
+            entidad = p['entidad']
+            direccion = p['direccion']
+            fase = p['fase']
+            
+            # --- ADAPTACIÓN A OBSTÁCULOS (RAYCASTING) ---
+            # Lanzamos un rayo desde el robot en la dirección de esta partícula
+            distancia_objetivo = self.tiempo_expansion * self.velocidad_expansion
+            
+            # Limitamos la distancia al radio máximo
+            distancia_objetivo = min(distancia_objetivo, self.radio_maximo)
+            
+            # El Raycast verifica si hay una pared en esa dirección
+            # ignorando al propio jugador (usando traverse_target=scene)
+            rayo = raycast(self.origen.position + Vec3(0,0.5,0), direccion, distance=distancia_objetivo, ignore=(self.origen,))
+            
+            if rayo.hit:
+                # Si choca, la niebla se detiene en la pared
+                p['distancia_actual'] = rayo.distance
+            else:
+                # Si no choca, la niebla sigue expandiéndose
+                p['distancia_actual'] = distancia_objetivo
+                
+            # Movemos la partícula a la nueva posición
+            entidad.position = self.origen.position + (direccion * p['distancia_actual'])
+            entidad.y = self.origen.y + 0.1 # Ligeramente por encima del piso
+            
+            # --- FLUCTUACIÓN (MATEMÁTICAS) ---
+            # Usamos la función Seno para que el tamaño y opacidad "respiren"
+            fluctuacion = (math.sin(self.tiempo_expansion * 5.0 + fase) + 1.0) * 0.5 
+            
+            # La partícula crece a medida que se aleja, y palpita
+            escala_base = p['distancia_actual'] * 0.5
+            entidad.scale = escala_base + (fluctuacion * 1.5)
+
 app = Ursina()
 
 app = Ursina(
@@ -94,6 +196,8 @@ brazo_der.setTransparency(TransparencyAttrib.MNone, 1)
 brazo_der.setDepthWrite(True)
 brazo_der.setDepthTest(True)
 
+onda = FuncionOndaCuantica(cuerpo_robot)
+
 AmbientLight(color=color.rgb(10, 10, 20))
 sun = DirectionalLight(
     shadows=False,
@@ -160,6 +264,12 @@ def update():
         target_rot_x_der = -rotacion_brazo_caminar_actual
         target_rot_x_izq = -rotacion_brazo_caminar_actual
         
+    if held_keys['e']:
+        onda.activar()
+    
+    if held_keys['f']:
+        onda.desactivar()
+        
     # lerp: mueve el ángulo ACTUAL hacia el OBJETIVO suavemente cada frame
     factor = min(velocidad_lerp_brazos * time.dt, 1.0)
 
@@ -167,6 +277,9 @@ def update():
     brazo_izq.rotation_x = lerp(brazo_izq.rotation_x, target_rot_x_izq, factor)
     brazo_der.rotation_z = lerp(brazo_der.rotation_z, target_rot_z_der, factor)
     brazo_izq.rotation_z = lerp(brazo_izq.rotation_z, target_rot_z_izq, factor)
+    
+    # --- modo onda ---
+    onda.actualizar(time.dt)
         
     modo_actual = modos_camara[indice_modo]
     
