@@ -22,38 +22,36 @@ class FuncionOndaCuantica:
         self.activo = False
         self.tiempo_expansion = 0.0
         
-        # --- CONFIGURACIÓN DE LA ZONA ---
-        self.radio_minimo = 2.0  
+        # --- CONFIGURACIÓN DE LA ZONA (Optimización) ---
+        self.radio_minimo = 3.0  
         self.radio_maximo = 12.0 
         
-        # La cantidad de partículas ahora se define por qué tan "apretados" están los anillos
-        self.distancia_entre_anillos = 0.8 # Menor = más superposición hacia afuera
-        self.distancia_entre_cubos = 0.8   # Menor = más superposición lateral
+        # Al subir estos valores, se generan menos cubos. 
+        # Valor de 1.8 a 2.0 genera aprox 150-200 cubos.
+        self.distancia_entre_anillos = 1.8 
+        self.distancia_entre_cubos = 1.8   
         
         # --- CONFIGURACIÓN VISUAL ---
         self.altura_min = 0.1
-        self.altura_max = 3.5
-        self.velocidad_onda = 5.0  
-        self.frecuencia_onda = 1.5 
+        self.altura_max = 2.0
+        self.velocidad_onda = 0.5  
         
-        self.nucleo = Entity(model='sphere', color=color.magenta, scale=0.8, enabled=False, unlit=True)
+        self.nucleo = Entity(model='sphere', color=color.magenta, scale=1.5, enabled=False, unlit=True)
         self.nucleo.setTransparency(TransparencyAttrib.MAlpha, 1)
 
     def activar(self):
         if self.activo: return
         self.activo = True
-        self.tiempo_expansion = 0.0
+        self.tiempo_expansion = 5
         
         self.origen.visible = False
         for b in self.brazos: b.visible = False
         self.nucleo.enabled = True
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        # --- GENERACIÓN DE LA DONA PREDEFINIDA (COORDENADAS POLARES) ---
+        # --- GENERACIÓN DE LA DONA OPTIMIZADA ---
         radio_actual = self.radio_minimo
-        
         while radio_actual <= self.radio_maximo:
-            # Calculamos la circunferencia de este anillo para saber cuántos cubos caben
             circunferencia = 2 * math.pi * radio_actual
             num_cubos = int(circunferencia / self.distancia_entre_cubos)
             
@@ -62,8 +60,8 @@ class FuncionOndaCuantica:
                 offset_x = math.cos(angulo) * radio_actual
                 offset_z = math.sin(angulo) * radio_actual
                 
-                # Cubos más anchos para forzar la superposición y no dejar huecos
-                cubo = Entity(model='cube', scale=Vec3(1.5, 0.1, 1.5), unlit=True, enabled=True)
+                # ESCALA AUMENTADA: Como hay menos cubos (cada 1.8m), miden 2.5m de ancho para superponerse
+                cubo = Entity(model='cube', scale=Vec3(2, 0.1, 2), unlit=True, enabled=True)
                 cubo.setTransparency(TransparencyAttrib.MAlpha, 1)
                 cubo.setDepthWrite(False)
                 
@@ -71,10 +69,11 @@ class FuncionOndaCuantica:
                     'entidad': cubo,
                     'distancia_centro': radio_actual,
                     'offset': Vec3(offset_x, 0, offset_z),
-                    'peso': 0.0 # Probabilidad inicial
+                    'peso': 0.0 
                 })
-                
             radio_actual += self.distancia_entre_anillos
+            
+        print(f"Cubos generados: {len(self.particulas)}") # Para que controles la cantidad exacta
 
     def desactivar(self):
         if not self.activo: return
@@ -91,35 +90,38 @@ class FuncionOndaCuantica:
         self.tiempo_expansion += dt
         
         self.nucleo.scale = 0.8 + (math.sin(self.tiempo_expansion * 8) * 0.15)
-        self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
+        self.nucleo.position = self.origen.position
         
-        # 1. RECALCULAR LISTA DE PESOS (PROBABILIDADES)
-        # Recorremos la lista y actualizamos el valor 'peso' de cada diccionario
-        for p in self.particulas:
-            dist = p['distancia_centro']
-            onda_matematica = math.sin(self.tiempo_expansion * self.velocidad_onda - dist * self.frecuencia_onda)
-            
-            # Guardamos la probabilidad (peso) de 0.0 a 1.0 en el diccionario
-            p['peso'] = (onda_matematica + 1.0) / 2.0
-            
-        # 2. APLICAR LOS PESOS A LA VISUALIZACIÓN
         for p in self.particulas:
             entidad = p['entidad']
-            probabilidad = p['peso']
+            dist = p['distancia_centro']
+            ox = p['offset'].x
+            oz = p['offset'].z
             
-            entidad.x = self.nucleo.x + p['offset'].x
-            entidad.z = self.nucleo.z + p['offset'].z
+            entidad.x = self.nucleo.x + ox
+            entidad.z = self.nucleo.z + oz
             
-            # Altura
+            # --- ONDA HETEROGÉNEA (Interferencia Cuántica) ---
+            # Mezclamos 3 ondas distintas: una circular, una en el eje X y otra en el Z
+            onda_base = math.sin(dist * 1.5 - self.tiempo_expansion * self.velocidad_onda)
+            onda_x = math.cos(ox * 0.8 + self.tiempo_expansion * 2.0)
+            onda_z = math.sin(oz * 0.8 - self.tiempo_expansion * 3.0)
+            
+            # Sumamos las ondas. El resultado oscilará entre -3.0 y 3.0
+            interferencia = onda_base + onda_x + onda_z
+            
+            # Normalizamos hacia (0.0 a 1.0)
+            probabilidad = (interferencia + 3.0) / 6.0
+            probabilidad = clamp(probabilidad, 0.0, 1.0)
+            
+            # --- APLICACIÓN VISUAL ---
             nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad)
             entidad.scale_y = nueva_altura
-            entidad.y = self.nucleo.y - 0.5 + (nueva_altura / 2)
+            entidad.y = 0.05 + (nueva_altura / 2)
             
-            # --- NOTA: AQUÍ DEBES PONER EL MÉTODO QUE TE FUNCIONÓ EN EL TEST ---
-            # Este ejemplo usa la Opción A (Vec4 nativo)
-            r = lerp(40/255, 180/255, probabilidad)
-            a = lerp(0.1, 1.0, probabilidad)
-            entidad.color = Vec4(r, 0, 1, a)
+            # Color fijo, solo varía el Alpha (0.05 casi invisible, 0.9 sólido)
+            a = lerp(0.05, 0.9, probabilidad)
+            entidad.color = Vec4(90/255, 0, 1, a)
 
 app = Ursina()
 
@@ -307,7 +309,7 @@ def update():
     elif modo_actual == "tercera":
         # --- MODO TERCERA PERSONA ---
         editor_camera.enabled = False
-        cuerpo_robot.visible = True # El robot se debe ver
+        cuerpo_robot.visible = not onda.activo
         # Posición: Donde está el robot + Offset hacia atrás y arriba
         # Usamos la variable 'distancia_tercera' que podemos cambiar con el mouse
         posicion_camara_objetivo = cuerpo_robot.position - (cuerpo_robot.forward * distancia_tercera) + (Vec3(0, 6, 0)* distancia_tercera/6)
@@ -319,7 +321,7 @@ def update():
     elif modo_actual == 'aerea':
         # --- MODO VISTA AÉREA (TOP DOWN) ---
         editor_camera.enabled = False
-        cuerpo_robot.visible = True
+        cuerpo_robot.visible = not onda.activo
         # Posición: Justo encima del robot, muy alto
         objetivo = cuerpo_robot.position + Vec3(0, altura_aerea, -2) # Altura variable
         camera.position = lerp(camera.position, objetivo, velocidad_camara * time.dt)
@@ -330,7 +332,7 @@ def update():
         
     elif modo_actual == 'libre':
         editor_camera.enabled = True
-        cuerpo_robot.visible = True
+        cuerpo_robot.visible = not onda.activo
 
 def input(key):
     global indice_modo, distancia_tercera, fov_primera, altura_aerea, onda
