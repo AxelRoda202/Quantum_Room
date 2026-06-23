@@ -4,7 +4,7 @@ loadPrcFileData('', 'load-display p3tinydisplay')
 from ursina.shaders import basic_lighting_shader
 from ursina import *
 from ursina.prefabs.editor_camera import EditorCamera
-from panda3d.core import TransparencyAttrib
+from panda3d.core import TransparencyAttrib, Vec4
 from ursina.shader import Shader
 from ursina.shaders import lit_with_shadows_shader
 import math
@@ -25,20 +25,16 @@ class FuncionOndaCuantica:
         # --- CONFIGURACIÓN DE LA ZONA ---
         self.radio_minimo = 2.0  
         self.radio_maximo = 12.0 
-        self.cantidad_particulas = 180 
         
-        # --- CONFIGURACIÓN VISUAL (Tus parámetros a modificar) ---
+        # La cantidad de partículas ahora se define por qué tan "apretados" están los anillos
+        self.distancia_entre_anillos = 0.8 # Menor = más superposición hacia afuera
+        self.distancia_entre_cubos = 0.8   # Menor = más superposición lateral
+        
+        # --- CONFIGURACIÓN VISUAL ---
         self.altura_min = 0.1
         self.altura_max = 3.5
-        
-        self.color_r_min = 40   # Rojo cuando la prob. es 0
-        self.color_r_max = 180  # Rojo cuando la prob. es 1
-        
-        self.alpha_min = 20     # Transparencia mínima (casi invisible)
-        self.alpha_max = 255    # Transparencia máxima (sólido)
-        
-        self.velocidad_onda = 5.0  # Qué tan rápido pulsa la onda
-        self.frecuencia_onda = 1.5 # Qué tan juntas están las olas entre sí
+        self.velocidad_onda = 5.0  
+        self.frecuencia_onda = 1.5 
         
         self.nucleo = Entity(model='sphere', color=color.magenta, scale=0.8, enabled=False, unlit=True)
         self.nucleo.setTransparency(TransparencyAttrib.MAlpha, 1)
@@ -51,45 +47,34 @@ class FuncionOndaCuantica:
         self.origen.visible = False
         for b in self.brazos: b.visible = False
         self.nucleo.enabled = True
-        self.nucleo.position = self.origen.position + Vec3(0, 0, 0)
+        self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        # --- FILTRO DE DISTRIBUCIÓN UNIFORME ---
-        umbral_superposicion = 0 # Distancia mínima entre cubos. Súbelo para separar más, bájalo para juntar.
-        intentos_maximos = 100 # Para evitar bucles infinitos si no hay más espacio
+        # --- GENERACIÓN DE LA DONA PREDEFINIDA (COORDENADAS POLARES) ---
+        radio_actual = self.radio_minimo
         
-        cubos_creados = 0
-        while cubos_creados < self.cantidad_particulas:
-            # 1. Generamos posición candidata
-            distancia = random.uniform(self.radio_minimo, self.radio_maximo)
-            angulo = random.uniform(0, math.pi * 2)
-            candidato_offset = Vec3(math.cos(angulo) * distancia, 0, math.sin(angulo) * distancia)
+        while radio_actual <= self.radio_maximo:
+            # Calculamos la circunferencia de este anillo para saber cuántos cubos caben
+            circunferencia = 2 * math.pi * radio_actual
+            num_cubos = int(circunferencia / self.distancia_entre_cubos)
             
-            # 2. Comprobamos superposición
-            superpuesto = False
-            for p in self.particulas:
-                # Calculamos distancia 2D entre el candidato y los cubos ya creados
-                distancia_entre_cubos = distance_2d(candidato_offset, p['offset'])
-                if distancia_entre_cubos < umbral_superposicion:
-                    superpuesto = True
-                    break
-            
-            # 3. Si hay espacio, creamos el cubo
-            if not superpuesto:
-                cubo = Entity(model='cube', scale=Vec3(2, 0.1, 2), unlit=True, enabled=True)
+            for i in range(num_cubos):
+                angulo = (i / num_cubos) * (math.pi * 2)
+                offset_x = math.cos(angulo) * radio_actual
+                offset_z = math.sin(angulo) * radio_actual
+                
+                # Cubos más anchos para forzar la superposición y no dejar huecos
+                cubo = Entity(model='cube', scale=Vec3(1.5, 0.1, 1.5), unlit=True, enabled=True)
                 cubo.setTransparency(TransparencyAttrib.MAlpha, 1)
                 cubo.setDepthWrite(False)
                 
                 self.particulas.append({
                     'entidad': cubo,
-                    'distancia_centro': distancia,
-                    'fase_individual': random.uniform(0, math.pi), # Desfase para añadir ruido orgánico
-                    'offset': candidato_offset
+                    'distancia_centro': radio_actual,
+                    'offset': Vec3(offset_x, 0, offset_z),
+                    'peso': 0.0 # Probabilidad inicial
                 })
-                cubos_creados += 1
-            else:
-                intentos_maximos -= 1
-                if intentos_maximos <= 0:
-                    break # Salimos si ya no cabe ni un cubo más en la zona
+                
+            radio_actual += self.distancia_entre_anillos
 
     def desactivar(self):
         if not self.activo: return
@@ -108,36 +93,33 @@ class FuncionOndaCuantica:
         self.nucleo.scale = 0.8 + (math.sin(self.tiempo_expansion * 8) * 0.15)
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
+        # 1. RECALCULAR LISTA DE PESOS (PROBABILIDADES)
+        # Recorremos la lista y actualizamos el valor 'peso' de cada diccionario
+        for p in self.particulas:
+            dist = p['distancia_centro']
+            onda_matematica = math.sin(self.tiempo_expansion * self.velocidad_onda - dist * self.frecuencia_onda)
+            
+            # Guardamos la probabilidad (peso) de 0.0 a 1.0 en el diccionario
+            p['peso'] = (onda_matematica + 1.0) / 2.0
+            
+        # 2. APLICAR LOS PESOS A LA VISUALIZACIÓN
         for p in self.particulas:
             entidad = p['entidad']
-            dist = p['distancia_centro']
+            probabilidad = p['peso']
             
-            # Mantener la posición relativa al núcleo
             entidad.x = self.nucleo.x + p['offset'].x
             entidad.z = self.nucleo.z + p['offset'].z
             
-            # --- CÁLCULO DE PROBABILIDAD CONTINUA ---
-            # Onda concéntrica: combina el tiempo y la distancia
-            onda_matematica = math.sin(self.tiempo_expansion * self.velocidad_onda - dist * self.frecuencia_onda)
-            
-            # Normalizamos de (-1 a 1) hacia (0.0 a 1.0)
-            probabilidad_base = (onda_matematica + 1.0) / 2.0
-            
-            # Añadimos un poco de ruido para que no sea un círculo perfecto
-            ruido = (math.sin(self.tiempo_expansion * 3.0 + p['fase_individual']) * 0.2)
-            probabilidad_final = clamp(probabilidad_base + ruido, 0.0, 1.0)
-            
-            # --- AUTOMATIZACIÓN VISUAL USANDO LERP ---
             # Altura
-            nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad_final)
+            nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad)
             entidad.scale_y = nueva_altura
             entidad.y = self.nucleo.y - 0.5 + (nueva_altura / 2)
             
-            # Color y Transparencia
-            r = int(lerp(self.color_r_min, self.color_r_max, probabilidad_final))
-            a = int(lerp(self.alpha_min, self.alpha_max, probabilidad_final))
-            
-            entidad.color = color.rgba(r, 0, 255, a)
+            # --- NOTA: AQUÍ DEBES PONER EL MÉTODO QUE TE FUNCIONÓ EN EL TEST ---
+            # Este ejemplo usa la Opción A (Vec4 nativo)
+            r = lerp(40/255, 180/255, probabilidad)
+            a = lerp(0.1, 1.0, probabilidad)
+            entidad.color = Vec4(r, 0, 1, a)
 
 app = Ursina()
 
