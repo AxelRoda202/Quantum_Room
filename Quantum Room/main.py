@@ -42,14 +42,16 @@ class FuncionOndaCuantica:
     def activar(self):
         if self.activo: return
         self.activo = True
-        self.tiempo_expansion = 5
+        self.tiempo_expansion = 0.0
         
         self.origen.visible = False
         for b in self.brazos: b.visible = False
         self.nucleo.enabled = True
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        # --- GENERACIÓN DE LA DONA OPTIMIZADA ---
+        # Lista temporal para ignorar al jugador, el nucleo, y las puertas en el raycast
+        objetos_a_ignorar = (self.origen, self.nucleo) + puertas_especiales
+        
         radio_actual = self.radio_minimo
         while radio_actual <= self.radio_maximo:
             circunferencia = 2 * math.pi * radio_actual
@@ -60,20 +62,30 @@ class FuncionOndaCuantica:
                 offset_x = math.cos(angulo) * radio_actual
                 offset_z = math.sin(angulo) * radio_actual
                 
-                # ESCALA AUMENTADA: Como hay menos cubos (cada 1.8m), miden 2.5m de ancho para superponerse
-                cubo = Entity(model='cube', scale=Vec3(2, 0.1, 2), unlit=True, enabled=True)
+                direccion_offset = Vec3(offset_x, 0, offset_z)
+                
+                # --- SISTEMA DE OCLUSIÓN (LINEA DE VISIÓN) ---
+                # Lanzamos un rayo desde el núcleo hacia donde debería estar el cubo
+                rayo = raycast(self.nucleo.position, direccion_offset.normalized(), distance=radio_actual, ignore=objetos_a_ignorar)
+                
+                # Si el rayo choca con algo (ej: pared de cemento), NO construimos este cubo
+                if rayo.hit:
+                    continue # Salta a la siguiente iteración del loop
+                
+                # Si hay vía libre, construimos el cubo
+                cubo = Entity(model='cube', scale=Vec3(2.5, 0.1, 2.5), unlit=True, enabled=True)
                 cubo.setTransparency(TransparencyAttrib.MAlpha, 1)
                 cubo.setDepthWrite(False)
                 
                 self.particulas.append({
                     'entidad': cubo,
                     'distancia_centro': radio_actual,
-                    'offset': Vec3(offset_x, 0, offset_z),
+                    'offset': direccion_offset,
                     'peso': 0.0 
                 })
             radio_actual += self.distancia_entre_anillos
             
-        print(f"Cubos generados: {len(self.particulas)}") # Para que controles la cantidad exacta
+        print(f"Cubos generados tras la oclusión: {len(self.particulas)}")
 
     def desactivar(self):
         if not self.activo: return
@@ -171,7 +183,9 @@ velocidad_lerp_brazos = 8.0
 rotacion_brazo_caminar_actual = rot_brazo_caminar_normal
 rotacion_brazo_girar_actual = rot_brazo_girar_normal
 
-# --- ENTIDADES ---
+# =============================================================================
+# ENTIDADES
+# =============================================================================
 cuerpo_robot = Entity(
     model = modelo_cuerpo,
     scale = (1,1,1),
@@ -209,6 +223,17 @@ brazo_der = Entity(
 brazo_der.setTransparency(TransparencyAttrib.MNone, 1)
 brazo_der.setDepthWrite(True)
 brazo_der.setDepthTest(True)
+
+# =============================================================================
+# LABORATORIO DE PRUEBAS: OBSTÁCULOS
+# =============================================================================
+pared_solida = Entity(model='cube', color=color.gray, scale=(10, 5, 1), position=(0, 2.5, 6), collider='box')
+pared_solida2 = Entity(model='cube', color=color.gray, scale=(1, 5, 10), position=(6, 2.5, 0), collider='box')
+
+# La puerta tiene un collider, pero la guardaremos en una lista especial para que la onda la ignore
+puerta_rendija = Entity(model='cube', color=color.orange, scale=(4, 5, 0.5), position=(-5, 2.5, -5), collider='box')
+puertas_especiales = (puerta_rendija,) # Tupla de entidades que la onda puede atravesar
+# =============================================================================
 
 onda = FuncionOndaCuantica(cuerpo_robot, brazo_izq, brazo_der)
 
