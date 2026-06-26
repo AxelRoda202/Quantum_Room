@@ -15,26 +15,24 @@ import random
 # =============================================================================
 
 class FuncionOndaCuantica:
-    def __init__(self, origen_entity, brazo_i, brazo_d):
+    def __init__(self, origen_entity, brazo_i, brazo_d, puertas_especiales=()):
         self.origen = origen_entity
         self.brazos = [brazo_i, brazo_d]
+        self.puertas_especiales = puertas_especiales
         self.particulas = []
         self.activo = False
         self.tiempo_expansion = 0.0
         
-        # --- CONFIGURACIÓN DE LA ZONA (Optimización) ---
+        # --- CONFIGURACIÓN DE LA ZONA (Optimizado a ~150-180 cubos) ---
         self.radio_minimo = 3.0  
         self.radio_maximo = 12.0 
-        
-        # Al subir estos valores, se generan menos cubos. 
-        # Valor de 1.8 a 2.0 genera aprox 150-200 cubos.
         self.distancia_entre_anillos = 1.8 
         self.distancia_entre_cubos = 1.8   
         
         # --- CONFIGURACIÓN VISUAL ---
-        self.altura_min = 0.1
+        self.altura_min = 0.01
         self.altura_max = 2.0
-        self.velocidad_onda = 0.5  
+        self.velocidad_onda = 0.01
         
         self.nucleo = Entity(model='sphere', color=color.magenta, scale=1.5, enabled=False, unlit=True)
         self.nucleo.setTransparency(TransparencyAttrib.MAlpha, 1)
@@ -49,9 +47,7 @@ class FuncionOndaCuantica:
         self.nucleo.enabled = True
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        # Lista temporal para ignorar al jugador, el nucleo, y las puertas en el raycast
-        objetos_a_ignorar = (self.origen, self.nucleo) + puertas_especiales
-        
+        # TAREA 1: GENERACIÓN (Se crean todos los cubos en su grilla polar fija)
         radio_actual = self.radio_minimo
         while radio_actual <= self.radio_maximo:
             circunferencia = 2 * math.pi * radio_actual
@@ -62,30 +58,17 @@ class FuncionOndaCuantica:
                 offset_x = math.cos(angulo) * radio_actual
                 offset_z = math.sin(angulo) * radio_actual
                 
-                direccion_offset = Vec3(offset_x, 0, offset_z)
-                
-                # --- SISTEMA DE OCLUSIÓN (LINEA DE VISIÓN) ---
-                # Lanzamos un rayo desde el núcleo hacia donde debería estar el cubo
-                rayo = raycast(self.nucleo.position, direccion_offset.normalized(), distance=radio_actual, ignore=objetos_a_ignorar)
-                
-                # Si el rayo choca con algo (ej: pared de cemento), NO construimos este cubo
-                if rayo.hit:
-                    continue # Salta a la siguiente iteración del loop
-                
-                # Si hay vía libre, construimos el cubo
-                cubo = Entity(model='cube', scale=Vec3(2.5, 0.1, 2.5), unlit=True, enabled=True)
+                cubo = Entity(model='cube', scale=Vec3(2, 0.1, 2), unlit=True, enabled=True)
                 cubo.setTransparency(TransparencyAttrib.MAlpha, 1)
                 cubo.setDepthWrite(False)
                 
                 self.particulas.append({
                     'entidad': cubo,
                     'distancia_centro': radio_actual,
-                    'offset': direccion_offset,
+                    'offset': Vec3(offset_x, 0, offset_z),
                     'peso': 0.0 
                 })
             radio_actual += self.distancia_entre_anillos
-            
-        print(f"Cubos generados tras la oclusión: {len(self.particulas)}")
 
     def desactivar(self):
         if not self.activo: return
@@ -102,36 +85,50 @@ class FuncionOndaCuantica:
         self.tiempo_expansion += dt
         
         self.nucleo.scale = 0.8 + (math.sin(self.tiempo_expansion * 8) * 0.15)
-        self.nucleo.position = self.origen.position
+        self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
+        objetos_a_ignorar = (self.origen, self.nucleo) + self.puertas_especiales
+        
+        # TAREA 2: CÁLCULO DE ÁREA Y VISUALIZACIÓN CONSTANTE
         for p in self.particulas:
             entidad = p['entidad']
             dist = p['distancia_centro']
             ox = p['offset'].x
             oz = p['offset'].z
             
-            entidad.x = self.nucleo.x + ox
-            entidad.z = self.nucleo.z + oz
+            # Posición teórica del cubo en este frame
+            pos_objetivo_x = self.nucleo.x + ox
+            pos_objetivo_z = self.nucleo.z + oz
+            direccion_rayo = Vec3(ox, 0, oz)
             
-            # --- ONDA HETEROGÉNEA (Interferencia Cuántica) ---
-            # Mezclamos 3 ondas distintas: una circular, una en el eje X y otra en el Z
+            # Lanzamos raycast desde el jugador hacia la posición del cubo para verificar colisión con paredes
+            rayo = raycast(self.nucleo.position, direccion_rayo.normalized(), distance=dist, ignore=objetos_a_ignorar)
+            
+            if rayo.hit:
+                # Si hay una pared sólida en medio, ocultamos el cubo inmediatamente
+                entidad.enabled = False
+                continue
+            else:
+                # Si el camino está libre, el cubo debe mostrarse
+                entidad.enabled = True
+            
+            # Reposicionamos
+            entidad.x = pos_objetivo_x
+            entidad.z = pos_objetivo_z
+            
+            # Interferencia cuántica (Onda heterogénea)
             onda_base = math.sin(dist * 1.5 - self.tiempo_expansion * self.velocidad_onda)
             onda_x = math.cos(ox * 0.8 + self.tiempo_expansion * 2.0)
             onda_z = math.sin(oz * 0.8 - self.tiempo_expansion * 3.0)
             
-            # Sumamos las ondas. El resultado oscilará entre -3.0 y 3.0
-            interferencia = onda_base + onda_x + onda_z
+            probabilidad = clamp((onda_base + onda_x + onda_z + 3.0) / 6.0, 0.0, 1.0)
             
-            # Normalizamos hacia (0.0 a 1.0)
-            probabilidad = (interferencia + 3.0) / 6.0
-            probabilidad = clamp(probabilidad, 0.0, 1.0)
-            
-            # --- APLICACIÓN VISUAL ---
+            # Altura fija al piso real (Y=0)
             nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad)
             entidad.scale_y = nueva_altura
             entidad.y = 0.05 + (nueva_altura / 2)
             
-            # Color fijo, solo varía el Alpha (0.05 casi invisible, 0.9 sólido)
+            # Transparencia adaptativa
             a = lerp(0.05, 0.9, probabilidad)
             entidad.color = Vec4(90/255, 0, 1, a)
 
