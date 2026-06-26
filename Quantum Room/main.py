@@ -5,37 +5,100 @@ from ursina.shaders import basic_lighting_shader
 from ursina import *
 from ursina.prefabs.editor_camera import EditorCamera
 from panda3d.core import TransparencyAttrib, Vec4
-from ursina.shader import Shader
 from ursina.shaders import lit_with_shadows_shader
 import math
 import random
 
-# =============================================================================
-# CLASE: FUNCIÓN DE ONDA (NIEBLA CUÁNTICA)
-# =============================================================================
+# --- SISTEMA DE FÍSICAS Y GRAVEDAD ---
+class ObjetoFisico(Entity):
+    def __init__(self, altura_pies, **kwargs):
+        super().__init__(**kwargs)
+        self.gravedad = -20.0 
+        self.velocidad_y = 0.0
+        self.en_el_suelo = False
+        self.masa = kwargs.get('masa', 1.0) 
+        
+        # fuerza de salto, mientras mas alto mas fuerte
+        self.fuerza_salto = 10.0 
+        
+        # --- ALTURA DE LOS PIES ---
+        # Distancia exacta desde el centro geométrico de tu modelo 3D hasta su base.
+        self.altura_pies = altura_pies 
 
+    def update(self):
+        # La gravedad afecta constantemente a la velocidad
+        self.velocidad_y += self.gravedad * time.dt
+            
+        # Calculamos cuánto nos vamos a mover en este frame
+        movimiento_y = self.velocidad_y * time.dt
+        nueva_y = self.y + movimiento_y
+
+        # Lanzamos el rayo desde el centro del objeto hacia abajo.
+        # La distancia que mira es: la altura a los pies + el movimiento de este frame + 0.1 de margen.
+        distancia_rayo = self.altura_pies + abs(movimiento_y) + 0.1 
+        
+        rayo_suelo = raycast(self.position, Vec3(0, -1, 0), distance=distancia_rayo, ignore=(self,))
+
+        if rayo_suelo.hit and self.velocidad_y <= 0:
+            self.velocidad_y = 0
+            self.en_el_suelo = True
+            self.y = rayo_suelo.world_point.y + self.altura_pies
+            
+        else:
+            self.en_el_suelo = False
+            self.y = nueva_y
+
+    def saltar(self):
+        if self.en_el_suelo:
+            self.velocidad_y = self.fuerza_salto
+            self.en_el_suelo = False
+
+# --- HITBOXES MANUALES ---
+def crear_hitbox(posicion, escala, permeable=0.0, visible=False):
+    hitbox = Entity(
+        model='cube',
+        position=posicion,
+        scale=escala,
+        collider='box',
+        visible=visible # Cambia a True cuando estés construyendo el nivel para verlas
+    )
+    # 0.0 = Sólido total (Paredes)
+    # 0.5 = Semi-permeable (Puertas láser en el futuro)
+    # 1.0 = Permeabilidad total (Puertas cuánticas/naranjas)
+    hitbox.permeabilidad_cuantica = permeable 
+    return hitbox
+
+# --- FUNCIÓN DE ONDA (NIEBLA CUÁNTICA) ---
 class FuncionOndaCuantica:
-    def __init__(self, origen_entity, brazo_i, brazo_d, puertas_especiales=()):
+    def __init__(self, origen_entity, brazo_i, brazo_d):
         self.origen = origen_entity
         self.brazos = [brazo_i, brazo_d]
-        self.puertas_especiales = puertas_especiales
         self.particulas = []
         self.activo = False
         self.tiempo_expansion = 0.0
         
-        # --- CONFIGURACIÓN DE LA ZONA (Optimizado a ~150-180 cubos) ---
         self.radio_minimo = 3.0  
         self.radio_maximo = 12.0 
         self.distancia_entre_anillos = 1.8 
         self.distancia_entre_cubos = 1.8   
         
-        # --- CONFIGURACIÓN VISUAL ---
         self.altura_min = 0.01
         self.altura_max = 2.0
         self.velocidad_onda = 0.01
         
+        # --- EL NÚCLEO Y SU BRÚJULA VISUAL ---
         self.nucleo = Entity(model='sphere', color=color.magenta, scale=1.5, enabled=False, unlit=True)
         self.nucleo.setTransparency(TransparencyAttrib.MAlpha, 1)
+        
+        # Este es el VISOR. Es un pequeño cubo alargado atado al núcleo
+        self.visor_orientacion = Entity(
+            parent=self.nucleo,
+            model='sphere',
+            color=color.cyan, # Color distinto para que resalte
+            scale=(0.6, 0.6, 0.3), # Alargado en el eje Z (frente)
+            position=(0, 0, 0.4),  # Desplazado ligeramente hacia adelante del núcleo
+            unlit=True
+        )
 
     def activar(self):
         if self.activo: return
@@ -47,7 +110,6 @@ class FuncionOndaCuantica:
         self.nucleo.enabled = True
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        # TAREA 1: GENERACIÓN (Se crean todos los cubos en su grilla polar fija)
         radio_actual = self.radio_minimo
         while radio_actual <= self.radio_maximo:
             circunferencia = 2 * math.pi * radio_actual
@@ -65,8 +127,7 @@ class FuncionOndaCuantica:
                 self.particulas.append({
                     'entidad': cubo,
                     'distancia_centro': radio_actual,
-                    'offset': Vec3(offset_x, 0, offset_z),
-                    'peso': 0.0 
+                    'offset': Vec3(offset_x, 0, offset_z)
                 })
             radio_actual += self.distancia_entre_anillos
 
@@ -87,58 +148,59 @@ class FuncionOndaCuantica:
         self.nucleo.scale = 0.8 + (math.sin(self.tiempo_expansion * 8) * 0.15)
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
         
-        objetos_a_ignorar = (self.origen, self.nucleo) + self.puertas_especiales
+        # el núcleo copie la rotación exacta del jugador
+        self.nucleo.rotation = self.origen.rotation
         
-        # TAREA 2: CÁLCULO DE ÁREA Y VISUALIZACIÓN CONSTANTE
+        # El rayo solo ignora al jugador y al núcleo para no chocar apenas sale
+        objetos_a_ignorar_basicos = (self.origen, self.nucleo)
+        
         for p in self.particulas:
             entidad = p['entidad']
             dist = p['distancia_centro']
             ox = p['offset'].x
             oz = p['offset'].z
             
-            # Posición teórica del cubo en este frame
             pos_objetivo_x = self.nucleo.x + ox
             pos_objetivo_z = self.nucleo.z + oz
             direccion_rayo = Vec3(ox, 0, oz)
             
-            # Lanzamos raycast desde el jugador hacia la posición del cubo para verificar colisión con paredes
-            rayo = raycast(self.nucleo.position, direccion_rayo.normalized(), distance=dist, ignore=objetos_a_ignorar)
+            # --- NUEVA LÓGICA DE PERMEABILIDAD ---
+            # Lanzamos el rayo
+            rayo = raycast(self.nucleo.position, direccion_rayo.normalized(), distance=dist, ignore=objetos_a_ignorar_basicos)
             
             if rayo.hit:
-                # Si hay una pared sólida en medio, ocultamos el cubo inmediatamente
-                entidad.enabled = False
-                continue
+                # Verificamos si el objeto impactado tiene la variable de permeabilidad
+                # Si no la tiene (por defecto), asumimos que es una pared sólida (0)
+                permeabilidad = getattr(rayo.entity, 'permeabilidad_cuantica', 0.0)
+                
+                if permeabilidad < 0.5: # Si es sólida (0), ocultamos el cubo
+                    entidad.enabled = False
+                    continue
+                else: 
+                    # Si la permeabilidad es alta (1.0 - Puerta naranja), el cubo SÍ se dibuja
+                    # Aquí podrías en el futuro hacer que el cubo cambie de color según la permeabilidad
+                    entidad.enabled = True
             else:
-                # Si el camino está libre, el cubo debe mostrarse
                 entidad.enabled = True
             
             # Reposicionamos
             entidad.x = pos_objetivo_x
             entidad.z = pos_objetivo_z
             
-            # Interferencia cuántica (Onda heterogénea)
+            # Animación visual
             onda_base = math.sin(dist * 1.5 - self.tiempo_expansion * self.velocidad_onda)
             onda_x = math.cos(ox * 0.8 + self.tiempo_expansion * 2.0)
             onda_z = math.sin(oz * 0.8 - self.tiempo_expansion * 3.0)
-            
             probabilidad = clamp((onda_base + onda_x + onda_z + 3.0) / 6.0, 0.0, 1.0)
             
-            # Altura fija al piso real (Y=0)
             nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad)
             entidad.scale_y = nueva_altura
             entidad.y = 0.05 + (nueva_altura / 2)
             
-            # Transparencia adaptativa
             a = lerp(0.05, 0.9, probabilidad)
             entidad.color = Vec4(90/255, 0, 1, a)
 
-app = Ursina()
-
-app = Ursina(
-    title = 'Quantum Room',
-    borderless = False,
-    fullscreen =  True
-)
+app = Ursina(title = 'Quantum Room', borderless = False, fullscreen = False) # Fullscreen falso temporal para pruebas
 
 # --- VARIABLES ---
 velocidad_normal = 6
@@ -146,51 +208,41 @@ indice_vel_ctrl = 1.5
 indice_vel_shift = 0.5
 velocidad_actual = velocidad_normal
 
-#grados por segundo
 rotacion_normal = 100 
 indice_rot_ctrl = 1.25
 indice_rot_shift = 0.75
 rotacion_actual = rotacion_normal
 
-# perspectivas de camara
 modos_camara = ["tercera", "primera", "aerea", "libre"]
-indice_modo = 0 # empezar en tercera persona
-# Configuración por defecto
+indice_modo = 0 
 distancia_tercera = 10
 altura_aerea = 20
 fov_primera = 90
-editor_camera = EditorCamera(
-    enabled=False
-)
+editor_camera = EditorCamera(enabled=False)
 
-# --- direcciones de modelos ---
 modelo_cuerpo = "assets/models/player/Jugador_particula_body"
 modelo_brazo_izq = "assets/models/player/Jugador_particula_arm_right"
 modelo_brazo_der = "assets/models/player/Jugador_particula_arm_left"
-modelo_sala_principal = ""
-modelo_sala_ET = ""
-modelo_sala_OP = ""
 
-spawn = Vec3(0, 1.2, 0)
+spawn = Vec3(0, 10, 0)
 
-# --- variables fisicas de brazos ---
 rot_brazo_caminar_normal = 35
 rot_brazo_girar_normal = 15
 velocidad_lerp_brazos = 8.0
 rotacion_brazo_caminar_actual = rot_brazo_caminar_normal
 rotacion_brazo_girar_actual = rot_brazo_girar_normal
 
-# =============================================================================
-# ENTIDADES
-# =============================================================================
-cuerpo_robot = Entity(
+# --- ENTIDADES FÍSICAS ---
+
+cuerpo_robot = ObjetoFisico(
+    altura_pies = 1,
     model = modelo_cuerpo,
     scale = (1,1,1),
     position = spawn,
     collider = 'box',
-    shader = lit_with_shadows_shader
+    shader = lit_with_shadows_shader,
+    masa = 70.0 
 )
-#transparencia cuerpo
 cuerpo_robot.setTransparency(TransparencyAttrib.MNone, 1)
 cuerpo_robot.setDepthWrite(True)
 cuerpo_robot.setDepthTest(True)
@@ -198,15 +250,11 @@ cuerpo_robot.setDepthTest(True)
 brazo_izq = Entity(
     model = modelo_brazo_izq,
     scale = (1,1,1),
-    position = Vec3(0.05,  0.15,  0.0), #(x)
+    position = Vec3(0.05,  0.15,  0.0), 
     parent = cuerpo_robot,
     collider = 'box',
     shader = lit_with_shadows_shader
 )
-#transparencia brazo izquierdo
-brazo_izq.setTransparency(TransparencyAttrib.MNone, 1)
-brazo_izq.setDepthWrite(True)
-brazo_izq.setDepthTest(True)
 
 brazo_der = Entity(
     model = modelo_brazo_der,
@@ -216,36 +264,37 @@ brazo_der = Entity(
     collider = 'box',
     shader = lit_with_shadows_shader
 )
-#transparencia brazo derecho
-brazo_der.setTransparency(TransparencyAttrib.MNone, 1)
-brazo_der.setDepthWrite(True)
-brazo_der.setDepthTest(True)
 
-# =============================================================================
-# LABORATORIO DE PRUEBAS: OBSTÁCULOS
-# =============================================================================
-pared_solida = Entity(model='cube', color=color.gray, scale=(10, 5, 1), position=(0, 2.5, 6), collider='box')
-pared_solida2 = Entity(model='cube', color=color.gray, scale=(1, 5, 10), position=(6, 2.5, 0), collider='box')
+# --- CONSTRUCCIÓN DEL MAPA ---
 
-# La puerta tiene un collider, pero la guardaremos en una lista especial para que la onda la ignore
-puerta_rendija = Entity(model='cube', color=color.orange, scale=(4, 5, 0.5), position=(-5, 2.5, -5), collider='box')
-puertas_especiales = (puerta_rendija,) # Tupla de entidades que la onda puede atravesar
-# =============================================================================
+# Paredes Sólidas Normales (permeable=0.0 por defecto)
+pared1 = crear_hitbox(posicion=(0, 2.5, 6), escala=(10, 5, 1), permeable=0.0, visible=True)
+pared1.color = color.gray
+pared2 = crear_hitbox(posicion=(6, 2.5, 0), escala=(1, 5, 10), permeable=0.0, visible=True)
+pared2.color = color.gray
+
+# Puerta Cuántica (permeable=1.0)
+puerta_rendija = crear_hitbox(posicion=(-5, 2.5, -5), escala=(4, 5, 0.5), permeable=1.0, visible=True)
+puerta_rendija.color = color.orange
+
+# Piso (Debe tener collider para que la gravedad lo detecte)
+ground = Entity(
+    model='cube',          # Ahora es un bloque sólido
+    position=(0, -0.5, 0), # Lo bajamos medio metro para que el ras del suelo quede exactamente en Y = 0
+    scale=(30, 1, 30),     # 30x30 de área, y 1 metro entero de grosor
+    texture='brick', 
+    texture_scale=(15,15), 
+    color=color.gray, 
+    collider='box'         # Al ser un cubo, Ursina le asigna una hitbox tridimensional perfecta
+)
 
 onda = FuncionOndaCuantica(cuerpo_robot, brazo_izq, brazo_der)
 
 AmbientLight(color=color.rgb(10, 10, 20))
-sun = DirectionalLight(
-    shadows=False,
-    color=color.rgb(100, 100, 100))
+sun = DirectionalLight(shadows=False, color=color.rgb(100, 100, 100))
 sun.look_at(Vec3(-1,-1,-1))
 
-ground = Entity(model='plane', scale=30, texture='brick', texture_scale=(15,15), color=color.gray)
-
-# --- Variables de fisicas ---
 tiempo_juego = 0
-inercia_brazos = Vec3(0,0,0)
-posicion_anterior_cuerpo = Vec3(0,0,0)
 
 def update():
     global velocidad_actual, rotacion_actual, tiempo_juego, onda
@@ -269,13 +318,11 @@ def update():
         rotacion_brazo_caminar_actual = rot_brazo_caminar_normal
         rotacion_brazo_girar_actual = rot_brazo_girar_normal
     
-    #Fisicas de los Brazos
-    target_rot_x_der = 0.0   # rotación X objetivo brazo derecho
-    target_rot_x_izq = 0.0   # rotación X objetivo brazo izquierdo
-    target_rot_z_der = 0.0   # rotación Z objetivo brazo derecho (apertura)
-    target_rot_z_izq = 0.0   # rotación Z objetivo brazo izquierdo (apertura)
+    target_rot_x_der = 0.0   
+    target_rot_x_izq = 0.0   
+    target_rot_z_der = 0.0   
+    target_rot_z_izq = 0.0   
     
-    # 1. ROTACIÓN (Izquierda / Derecha)
     if held_keys['a']:
         cuerpo_robot.rotation_y -= rotacion_actual * time.dt
         target_rot_z_der = rotacion_brazo_girar_actual 
@@ -286,16 +333,12 @@ def update():
         target_rot_z_der = -rotacion_brazo_girar_actual
         target_rot_z_izq = -rotacion_brazo_girar_actual
 
-    # 2. MOVIMIENTO (Adelante / Atrás)
-    
     if held_keys['w']:
-        # Sumamos a la posición actual el vector del frente
         cuerpo_robot.position += cuerpo_robot.forward * velocidad_actual * time.dt
         target_rot_x_der = rotacion_brazo_caminar_actual
         target_rot_x_izq = rotacion_brazo_caminar_actual
         
     if held_keys['s']:
-        # Restamos el vector del frente (ir hacia atrás)
         cuerpo_robot.position -= cuerpo_robot.forward * velocidad_actual * time.dt
         target_rot_x_der = -rotacion_brazo_caminar_actual
         target_rot_x_izq = -rotacion_brazo_caminar_actual
@@ -306,7 +349,6 @@ def update():
     if held_keys['f']:
         onda.desactivar()
         
-    # lerp: mueve el ángulo ACTUAL hacia el OBJETIVO suavemente cada frame
     factor = min(velocidad_lerp_brazos * time.dt, 1.0)
 
     brazo_der.rotation_x = lerp(brazo_der.rotation_x, target_rot_x_der, factor)
@@ -314,40 +356,32 @@ def update():
     brazo_der.rotation_z = lerp(brazo_der.rotation_z, target_rot_z_der, factor)
     brazo_izq.rotation_z = lerp(brazo_izq.rotation_z, target_rot_z_izq, factor)
     
-    # --- modo onda ---
     onda.actualizar(time.dt)
         
     modo_actual = modos_camara[indice_modo]
     
     if modo_actual == "primera":
-        # --- MODO PRIMERA PERSONA ---
         editor_camera.enabled = False
-        cuerpo_robot.visible = False # Ocultamos el robot para no ver sus tripas
+        cuerpo_robot.visible = False 
         posicion_ojos = cuerpo_robot.position + Vec3(0, 0.5, 0) + (cuerpo_robot.forward * 0.4)
         camera.position = posicion_ojos
         camera.rotation = cuerpo_robot.rotation
         camera.fov = 110
     
     elif modo_actual == "tercera":
-        # --- MODO TERCERA PERSONA ---
         editor_camera.enabled = False
         cuerpo_robot.visible = not onda.activo
-        # Posición: Donde está el robot + Offset hacia atrás y arriba
-        # Usamos la variable 'distancia_tercera' que podemos cambiar con el mouse
         posicion_camara_objetivo = cuerpo_robot.position - (cuerpo_robot.forward * distancia_tercera) + (Vec3(0, 6, 0)* distancia_tercera/6)
         camera.position = lerp(camera.position, posicion_camara_objetivo, velocidad_camara * time.dt)
         camera.look_at(cuerpo_robot.position + Vec3(0, 1, 0))
-        camera.fov = 90 # Fov estándar
+        camera.fov = 90 
         camera.rotation_z = 0
     
     elif modo_actual == 'aerea':
-        # --- MODO VISTA AÉREA (TOP DOWN) ---
         editor_camera.enabled = False
         cuerpo_robot.visible = not onda.activo
-        # Posición: Justo encima del robot, muy alto
-        objetivo = cuerpo_robot.position + Vec3(0, altura_aerea, -2) # Altura variable
+        objetivo = cuerpo_robot.position + Vec3(0, altura_aerea, -2) 
         camera.position = lerp(camera.position, objetivo, velocidad_camara * time.dt)
-        # Rotación: Mirando picado hacia abajo (90 grados en X)
         camera.rotation_x = 80 
         camera.rotation_y = 0
         camera.rotation_z = 0
@@ -359,36 +393,36 @@ def update():
 def input(key):
     global indice_modo, distancia_tercera, fov_primera, altura_aerea, onda
     
-    # 1. CAMBIO DE CÁMARA (Tecla TAB)
+    if key == 'space': # Salto añadido a la tecla espacio
+        cuerpo_robot.saltar()
+
     if key == 'tab':
-        indice_modo += 1 # Pasamos al siguiente modo
-        if indice_modo >= len(modos_camara): # Si llegamos al final de la lista...
-            indice_modo = 0 # ...volvemos al principio (Bucle)
+        indice_modo += 1 
+        if indice_modo >= len(modos_camara): 
+            indice_modo = 0 
         
         print(f"Cambiado a modo: {modos_camara[indice_modo]}")
 
-    # 2. RUEDA DEL MOUSE (Contextual: Hace cosas distintas según el modo)
     modo_actual = modos_camara[indice_modo]
 
-    if key == 'scroll up': # Rueda hacia adelante
+    if key == 'scroll up': 
         if modo_actual == 'tercera':
-            distancia_tercera -= 1 # Acercamos la cámara
+            distancia_tercera -= 1 
         elif modo_actual == 'primera':
-            fov_primera -= 5       # Zoom in (Efecto francotirador)
+            fov_primera -= 5       
         elif modo_actual == 'aerea':
-            altura_aerea -= 2      # Bajamos el dron
+            altura_aerea -= 2      
 
-    if key == 'scroll down': # Rueda hacia atrás
+    if key == 'scroll down': 
         if modo_actual == 'tercera':
-            distancia_tercera += 1 # Alejamos la cámara
+            distancia_tercera += 1 
         elif modo_actual == 'primera':
-            fov_primera += 5       # Zoom out (Ojo de pez)
+            fov_primera += 5       
         elif modo_actual == 'aerea':
-            altura_aerea += 2      # Subimos el dron
+            altura_aerea += 2      
 
-    # LIMITES (Para no romper la camara)
-    distancia_tercera = clamp(distancia_tercera, 4, 20) # Mínimo 4, Máximo 20
-    fov_primera = clamp(fov_primera, 30, 120)           # Mínimo 30, Máximo 120
+    distancia_tercera = clamp(distancia_tercera, 4, 20) 
+    fov_primera = clamp(fov_primera, 30, 120)           
     altura_aerea = clamp(altura_aerea, 10, 50)
 
 app.run()
