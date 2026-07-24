@@ -1,6 +1,6 @@
-# from panda3d.core import loadPrcFileData
+from panda3d.core import loadPrcFileData
 # Fuerza a Panda3D a usar el renderizador por software (ignora la GPU)
-# loadPrcFileData('', 'load-display p3tinydisplay')
+loadPrcFileData('', 'load-display p3tinydisplay')
 from ursina.shaders import basic_lighting_shader
 from ursina import *
 from ursina.prefabs.editor_camera import EditorCamera
