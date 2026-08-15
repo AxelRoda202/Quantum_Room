@@ -49,7 +49,7 @@ rotacion_brazo_girar_actual = rot_brazo_girar_normal
 cuerpo_robot = ObjetoFisico(
     altura_pies = 1,
     model = modelo_cuerpo,
-    scale = (1,1,1),
+    scale = (0.7,0.7,0.7),
     position = spawn,
     collider = 'box',
     shader = lit_with_shadows_shader,
@@ -61,8 +61,8 @@ cuerpo_robot.setDepthTest(True)
 
 brazo_izq = Entity(
     model = modelo_brazo_izq,
-    scale = (1,1,1),
-    position = Vec3(0.05,  0.15,  0.0), 
+    scale = (0.85,0.85,0.85),
+    position = Vec3(0.2,  0.15,  0.0), 
     parent = cuerpo_robot,
     collider = 'box',
     shader = lit_with_shadows_shader
@@ -73,8 +73,8 @@ brazo_izq.setDepthTest(True)
 
 brazo_der = Entity(
     model = modelo_brazo_der,
-    scale = (1,1,1),
-    position = Vec3( -0.05,  0.15,  0.0),
+    scale = (0.85,0.85,0.85),
+    position = Vec3( -0.2,  0.15,  0.0),
     parent = cuerpo_robot,
     collider = 'box',
     shader = lit_with_shadows_shader

@@ -48,10 +48,10 @@ class MapaNivel1:
             scale=1,
             unlit=True
         )
-        self.modelo_visual.setTransparency(TransparencyAttrib.MNone, 1)
-        self.modelo_visual.setDepthWrite(True)
-        self.modelo_visual.setDepthTest(True)
-        self.modelo_visual.color_scale = Vec4(0.8, 0.8, 0.8, 1.0) 
+        self.modelo_visual.setTransparency(TransparencyAttrib.MNone, 1) #transparencia
+        self.modelo_visual.setDepthWrite(True) #distancia con respecto a la camara
+        self.modelo_visual.setDepthTest(True) #no dibuja los pixeles tapados por otros
+        self.modelo_visual.color_scale = Vec4(0.8, 0.8, 0.8, 1.0)  #escalado del color
 
         # Listas para guardar las hitboxes
         self.hitboxes_paredes = []
@@ -65,7 +65,7 @@ class MapaNivel1:
         # Color del suelo en modo edición (Cian semi-transparente)
         color_suelo = color.rgba(0, 255, 255, 10) if self.modo_edicion else color.clear
 
-        # --- A. EL SUELO (Posición, Escala) ---
+        # --- SUELO (Posición, Escala) ---
         datos_suelos = [
             ((4, -0.25, -2), (28, 0.5, 24)),
             ((4, -0.25, 20), (20, 0.5, 12)),
@@ -84,7 +84,7 @@ class MapaNivel1:
             )
             self.hitboxes_suelo.append(suelo)
 
-        # --- B. LAS PAREDES SÓLIDAS (Posición, Escala, Rotación Y) ---
+        # --- PAREDES SÓLIDAS (Posición, Escala, Rotación Y) ---
         datos_paredes = [
             ((-3, 2.5, 10), (10, 5, 1), 0),         # Pared 1
             ((-9, 2.5, 9), (4, 5, 1), -45),         # Pared 2
@@ -143,7 +143,7 @@ class MapaNivel1:
             self.hitboxes_paredes.append(pared)
 
 
-        # --- C. PUERTAS Y RENDIJAS ---
+        # --- PUERTAS Y RENDIJAS --- (mas adelante)
         #puerta = crear_hitbox(posicion=(5, 2.5, 0), escala=(1, 5, 3), permeable=1.0, modo_edicion=self.modo_edicion)
         #self.hitboxes_puertas.append(puerta)
 
@@ -160,8 +160,8 @@ if __name__ == '__main__':
     
     app = Ursina(title='Laboratorio de Mapas')
     
-    # Instanciamos el mapa en modo edición para ver los colores
-    mapa_prueba = MapaNivel1(modo_edicion=True)
+    # Instanciamos el mapa 
+    mapa_prueba = MapaNivel1(modo_edicion=False)
     
     # Cámara libre para volar por el mapa
     EditorCamera()

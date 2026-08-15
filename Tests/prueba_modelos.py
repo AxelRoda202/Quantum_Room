@@ -7,6 +7,7 @@ from ursina.prefabs.editor_camera import EditorCamera
 from panda3d.core import TransparencyAttrib
 from ursina.shader import Shader
 from ursina.shaders import lit_with_shadows_shader
+from panda3d.core import Material
 app = Ursina()
 
 vert = '''
@@ -27,16 +28,15 @@ frag = '''
 #version 140
 uniform sampler2D p3d_Texture0;
 uniform vec4 p3d_ColorScale;
+uniform float factor_oscuridad; // <-- VARIABLE NUEVA
 in vec2 texcoord;
 out vec4 fragColor;
 
 void main() {
-    // Lee el color original de tu modelo
     vec4 color = texture(p3d_Texture0, texcoord) * p3d_ColorScale;
     
-    // Aquí puedes alterar el color. 
-    // Por ahora, simplemente le decimos que dibuje tu color base exacto y lo oscurezca un poco.
-    fragColor = color * 0.8; 
+    // Multiplicamos por la variable que mandaremos desde Python
+    fragColor = color * factor_oscuridad; 
 }
 '''
 
@@ -57,12 +57,28 @@ MODELO_BRAZO_IZQ = 'player/Jugador_particula_arm_right_separado'   # assets/mode
 # =====================================================
 
 modelo = Entity(
-    model='player/Jugador_particula_body_separado',
+    model='player/decoracion/casino2_h',
     position=(0, 0, 0),
     scale=1,
     shader=lit_with_shadows_shader,
-    texture='texture_default'
+    texture='texture_default',
+    color=color.rgb(1, 1, 1), # Un gris base
+    #unlit=True # IMPORTANTE: Ignora luces y materiales defectuosos
 )
+modelo.rotation_y = 180
+
+"""# 1. Creamos un nuevo material
+mi_material = Material()
+
+mi_material.setAmbient((0.2, 0.2, 0.25, 1))  # Un gris oscuro ligeramente azulado para las sombras
+mi_material.setDiffuse((0.5, 0.5, 0.5, 1))   # Gris medio para la luz principal
+mi_material.setSpecular((0.0, 0.0, 0.0, 1))  # Sin brillo plástico
+mi_material.setEmission((0.0, 0.0, 0.0, 1))  # No brilla en la oscuridad
+
+# 3. Aplicamos el material al modelo forzándolo (el '1' es la prioridad)
+modelo.set_material(mi_material, 1)"""
+
+#modelo.set_color_scale((100, 100, 100, 1.0))
 # --- AÑADE ESTO ---
 # 1. Fuerza al motor a ignorar cualquier transparencia del .glb (el '1' al final fuerza la prioridad)
 modelo.setTransparency(TransparencyAttrib.MNone, 1)
@@ -70,7 +86,8 @@ modelo.setTransparency(TransparencyAttrib.MNone, 1)
 modelo.setDepthWrite(True)
 modelo.setDepthTest(True)
 
-brazo_der = Entity(
+
+"""brazo_der = Entity(
     parent  = modelo,             # HIJO del cuerpo — se mueve con él
     model   = MODELO_BRAZO_DER,
     scale   = ESCALA_BRAZOS,
@@ -93,7 +110,7 @@ brazo_izq = Entity(
 
 brazo_izq.setTransparency(TransparencyAttrib.MNone, 1)
 brazo_izq.setDepthWrite(True)
-brazo_izq.setDepthTest(True)
+brazo_izq.setDepthTest(True)"""
 
 # =====================================================
 # EJES DE REFERENCIA
@@ -125,13 +142,13 @@ Entity(
 # =====================================================
 
 AmbientLight(
-    color=color.rgb(10, 10, 20) # Valores bajos, casi un gris oscuro azulado
+    color=color.rgb(10, 10, 10) # Valores bajos, casi un gris oscuro azulado
 )
 
 # El sol principal, un poco menos intenso que el blanco puro
 sun = DirectionalLight(
     shadows=True,
-    color=color.rgb(100, 100, 100)
+    color=color.rgb(15, 15, 15)
 )
 
 sun.look_at(Vec3(-1,-1,-1))
