@@ -7,41 +7,38 @@ from panda3d.core import TransparencyAttrib, Vec4
 import math
 import random
 
-# --- SISTEMA DE FÍSICAS Y GRAVEDAD ---
+# --- DENTRO DE clases.py ---
 class ObjetoFisico(Entity):
     def __init__(self, altura_pies, **kwargs):
+        # Extraemos la lista de ignorados si existe, o creamos una vacía
+        self.entidades_ignoradas = kwargs.pop('entidades_ignoradas', [])
+        
         super().__init__(**kwargs)
         self.gravedad = -20.0 
         self.velocidad_y = 0.0
         self.en_el_suelo = False
         self.masa = kwargs.get('masa', 1.0) 
-        
-        # fuerza de salto, mientras mas alto mas fuerte
         self.fuerza_salto = 10.0 
-        
-        # --- ALTURA DE LOS PIES ---
-        # Distancia exacta desde el centro geométrico del modelo 3D hasta su base.
         self.altura_pies = altura_pies 
+        
+        # Nos aseguramos de que el objeto siempre se ignore a sí mismo
+        if self not in self.entidades_ignoradas:
+            self.entidades_ignoradas.append(self)
 
     def update(self):
-        # La gravedad afecta constantemente a la velocidad
         self.velocidad_y += self.gravedad * time.dt
-            
-        # Calculamos cuánto nos vamos a mover en este frame
         movimiento_y = self.velocidad_y * time.dt
         nueva_y = self.y + movimiento_y
 
-        # Lanzamos el rayo desde el centro del objeto hacia abajo.
-        # La distancia que mira es: la altura a los pies + el movimiento de este frame + 0.1 de margen.
         distancia_rayo = self.altura_pies + abs(movimiento_y) + 0.1 
         
-        rayo_suelo = raycast(self.position, Vec3(0, -1, 0), distance=distancia_rayo, ignore=(self,))
+        # Usamos la lista de ignorados para evitar el bug de levitación
+        rayo_suelo = raycast(self.position, Vec3(0, -1, 0), distance=distancia_rayo, ignore=self.entidades_ignoradas)
 
         if rayo_suelo.hit and self.velocidad_y <= 0:
             self.velocidad_y = 0
             self.en_el_suelo = True
             self.y = rayo_suelo.world_point.y + self.altura_pies
-            
         else:
             self.en_el_suelo = False
             self.y = nueva_y
@@ -50,6 +47,23 @@ class ObjetoFisico(Entity):
         if self.en_el_suelo:
             self.velocidad_y = self.fuerza_salto
             self.en_el_suelo = False
+
+    def ser_empujado(self, direccion, paso, ignorar_frontal):
+        """
+        Lanza un rayo frontal para verificar si el objeto puede ser empujado.
+        Retorna True si se movió, False si chocó con la pared.
+        """
+        # distance = paso + la mitad de su tamaño (para que choque el borde, no el centro)
+        margen = paso + (max(self.scale) / 2) + 0.1
+        
+        # Lanzamos un rayo desde el centro del objeto hacia donde lo empujan
+        colision = raycast(self.position + Vec3(0, self.altura_pies, 0), direccion, distance=margen, ignore=ignorar_frontal)
+        
+        if not colision.hit:
+            self.position += direccion * paso
+            return True # Camino libre
+        
+        return False # Chocó contra la geometría del mapa
             
 # --- FUNCIÓN DE ONDA (NIEBLA CUÁNTICA) ---
 class FuncionOndaCuantica:
@@ -60,10 +74,10 @@ class FuncionOndaCuantica:
         self.activo = False
         self.tiempo_expansion = 0.0
         
-        self.radio_minimo = 3.0  
-        self.radio_maximo = 12.0 
-        self.distancia_entre_anillos = 1.8 
-        self.distancia_entre_cubos = 1.8   
+        self.radio_minimo = 2.0  
+        self.radio_maximo = 7.0 
+        self.distancia_entre_anillos = 1.2 
+        self.distancia_entre_cubos = 1.2   
         
         self.altura_min = 0.01
         self.altura_max = 2.0
@@ -103,7 +117,7 @@ class FuncionOndaCuantica:
                 offset_x = math.cos(angulo) * radio_actual
                 offset_z = math.sin(angulo) * radio_actual
                 
-                cubo = Entity(model='cube', scale=Vec3(2, 0.1, 2), unlit=True, enabled=True)
+                cubo = Entity(model='cube', scale=Vec3(1.5, 0.1, 1.5), unlit=True, enabled=True)
                 cubo.setTransparency(TransparencyAttrib.MAlpha, 1)
                 cubo.setDepthWrite(False)
                 
@@ -117,12 +131,26 @@ class FuncionOndaCuantica:
     def desactivar(self):
         if not self.activo: return
         self.activo = False
-        for p in self.particulas: destroy(p['entidad'])
+        
+        # Filtramos cubos visibles con probabilidad válida mayor a cero
+        cubos_candidatos = [p for p in self.particulas if p['entidad'].enabled and p.get('probabilidad_actual', 0) > 0]
+        
+        if cubos_candidatos:
+            posiciones = [Vec3(p['entidad'].x, self.origen.y, p['entidad'].z) for p in cubos_candidatos]
+            pesos = [p['probabilidad_actual'] for p in cubos_candidatos]
+            
+            # Sorteo ponderado: a mayor altura del cubo, mayor probabilidad de aparecer ahí
+            posicion_elegida = random.choices(posiciones, weights=pesos, k=1)[0]
+            self.origen.position = posicion_elegida
+
+        for p in self.particulas: 
+            destroy(p['entidad'])
         self.particulas.clear()
         
         self.nucleo.enabled = False
         self.origen.visible = True
-        for b in self.brazos: b.visible = True
+        for b in self.brazos: 
+            b.visible = True
 
     def actualizar(self, dt):
         if not self.activo: return
@@ -130,12 +158,9 @@ class FuncionOndaCuantica:
         
         self.nucleo.scale = 0.8 + (math.sin(self.tiempo_expansion * 8) * 0.15)
         self.nucleo.position = self.origen.position + Vec3(0, 0.5, 0)
-        
-        # el núcleo copie la rotación exacta del jugador
         self.nucleo.rotation = self.origen.rotation
         
-        # El rayo solo ignora al jugador y al núcleo para no chocar apenas sale
-        objetos_a_ignorar_basicos = (self.origen, self.nucleo)
+        objetos_a_ignorar = (self.origen, self.nucleo)
         
         for p in self.particulas:
             entidad = p['entidad']
@@ -147,37 +172,38 @@ class FuncionOndaCuantica:
             pos_objetivo_z = self.nucleo.z + oz
             direccion_rayo = Vec3(ox, 0, oz)
             
-            # --- LÓGICA DE PERMEABILIDAD ---
-            # Lanzamos el rayo
-            rayo = raycast(self.nucleo.position, direccion_rayo.normalized(), distance=dist, ignore=objetos_a_ignorar_basicos)
+            # Lanzamos rayo desde el núcleo
+            rayo = raycast(self.nucleo.position, direccion_rayo.normalized(), distance=dist, ignore=objetos_a_ignorar)
             
+            # Obtenemos permeabilidad (1.0 libre, 0.0 pared sólida, 0.4 rendijas)
+            factor_permeabilidad = 1.0
             if rayo.hit:
-                # Verificamos si el objeto impactado tiene la variable de permeabilidad
-                # Si no la tiene (por defecto), asumimos que es una pared sólida (0)
-                permeabilidad = getattr(rayo.entity, 'permeabilidad_cuantica', 0.0)
-                
-                if permeabilidad < 0.5: # Si es sólida (0), ocultamos el cubo
-                    entidad.enabled = False
-                    continue
-                else: 
-                    entidad.enabled = True
-            else:
-                entidad.enabled = True
+                factor_permeabilidad = getattr(rayo.entity, 'permeabilidad_cuantica', 0.0)
             
-            # Reposicionamos
+            # Si es pared completamente sólida (0.0), el cubo no es visible
+            if factor_permeabilidad <= 0.0:
+                entidad.enabled = False
+                p['probabilidad_actual'] = 0.0
+                continue
+            
+            entidad.enabled = True
             entidad.x = pos_objetivo_x
             entidad.z = pos_objetivo_z
             
-            # Animación visual
+            # Cálculo probabilístico base (senoidal)
             onda_base = math.sin(dist * 1.5 - self.tiempo_expansion * self.velocidad_onda)
             onda_x = math.cos(ox * 0.8 + self.tiempo_expansion * 2.0)
             onda_z = math.sin(oz * 0.8 - self.tiempo_expansion * 3.0)
-            probabilidad = clamp((onda_base + onda_x + onda_z + 3.0) / 6.0, 0.0, 1.0)
+            probabilidad_base = clamp((onda_base + onda_x + onda_z + 3.0) / 6.0, 0.0, 1.0)
             
-            nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad)
+            # Multiplicamos la probabilidad por la permeabilidad del objeto atravesado
+            probabilidad_final = probabilidad_base * factor_permeabilidad
+            p['probabilidad_actual'] = probabilidad_final
+            
+            # Escala (altura) proporcional a la probabilidad ajustada
+            nueva_altura = lerp(self.altura_min, self.altura_max, probabilidad_final)
             entidad.scale_y = nueva_altura
             entidad.y = 0.05 + (nueva_altura / 2)
             
-            a = lerp(0.05, 0.9, probabilidad)
+            a = lerp(0.05, 0.9, probabilidad_final)
             entidad.color = Vec4(90/255, 0, 2, a)
-            

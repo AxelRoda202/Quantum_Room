@@ -108,12 +108,13 @@ silla_gamer = ObjetoFisico(
     position=(-0.6, 4, -0.4),             # Coordenadas en la sala                    
     rotation_y = -126,               # Rotación para que mire al jugador
     scale=2,                          # Ajusta si el modelo es muy grande/chico
-    collider='mesh',                   # Vital para que el jugador choque contra ésl
+    collider='box',                   # Vital para que el jugador choque contra ésl
     color=color.rgb(5, 5, 5),
                        # O usa el shader que estés usando para el mapa
     shader = lit_with_shadows_shader,
     altura_pies = 1,
-    masa = 5
+    masa = 5,
+    entidades_ignoradas=[cuerpo_robot]
 )
 
 silla_gamer.setTransparency(TransparencyAttrib.MNone, 1)
@@ -169,11 +170,18 @@ def update():
         direccion = cuerpo_robot.forward
         paso = velocidad_actual * time.dt
         
-        # Raycast desde el pecho hacia adelante. distance es el margen de choque.
-        colision_frente = raycast(cuerpo_robot.position + Vec3(0, 1, 0), direccion, distance=paso + 0.9, ignore=(cuerpo_robot,))
+        colision_frente = raycast(cuerpo_robot.position + Vec3(0, 1, 0), direccion, distance=paso + 0.9, ignore=(cuerpo_robot, onda.nucleo))
         
-        if not colision_frente.hit: # Si no hay nada adelante, avanza
+        if not colision_frente.hit: 
             cuerpo_robot.position += direccion * paso
+            
+        elif hasattr(colision_frente.entity, 'masa') and colision_frente.entity.masa <= cuerpo_robot.masa:
+            # Lista de cosas que el mueble debe ignorar al avanzar (él mismo, el jugador y el núcleo de onda)
+            ignorar_empuje = (colision_frente.entity, cuerpo_robot, onda.nucleo)
+            
+            # Pedimos al objeto que intente moverse. Si retorna True, entonces avanzamos con él.
+            if colision_frente.entity.ser_empujado(direccion, paso, ignorar_empuje):
+                cuerpo_robot.position += direccion * paso
             
         target_rot_x_der = rotacion_brazo_caminar_actual
         target_rot_x_izq = rotacion_brazo_caminar_actual
@@ -182,11 +190,16 @@ def update():
         direccion = -cuerpo_robot.forward
         paso = velocidad_actual * time.dt
         
-        # Raycast desde el pecho hacia atrás
-        colision_atras = raycast(cuerpo_robot.position + Vec3(0, 1, 0), direccion, distance=paso + 0.9, ignore=(cuerpo_robot,))
+        colision_atras = raycast(cuerpo_robot.position + Vec3(0, 1, 0), direccion, distance=paso + 0.9, ignore=(cuerpo_robot, onda.nucleo))
         
-        if not colision_atras.hit: # Si no hay nada atrás, retrocede
+        if not colision_atras.hit: 
             cuerpo_robot.position += direccion * paso
+            
+        elif hasattr(colision_atras.entity, 'masa') and colision_atras.entity.masa <= cuerpo_robot.masa:
+            ignorar_empuje = (colision_atras.entity, cuerpo_robot, onda.nucleo)
+            
+            if colision_atras.entity.ser_empujado(direccion, paso, ignorar_empuje):
+                cuerpo_robot.position += direccion * paso
             
         target_rot_x_der = -rotacion_brazo_caminar_actual
         target_rot_x_izq = -rotacion_brazo_caminar_actual

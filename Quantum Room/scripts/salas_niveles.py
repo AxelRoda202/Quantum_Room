@@ -144,8 +144,12 @@ class MapaNivel1:
 
 
         # --- PUERTAS Y RENDIJAS --- (mas adelante)
-        #puerta = crear_hitbox(posicion=(5, 2.5, 0), escala=(1, 5, 3), permeable=1.0, modo_edicion=self.modo_edicion)
-        #self.hitboxes_puertas.append(puerta)
+        puerta_ranura1 = crear_hitbox(posicion=(4, 2.5, -16), escala=(1, 5, 4), permeable=0.8, modo_edicion=self.modo_edicion)
+        puerta_ranura1.rotation_y = 90
+        self.hitboxes_puertas.append(puerta_ranura1)
+        
+        puerta_laseres1 = crear_hitbox(posicion=(-8, 2.5, -24), escala=(1, 5, 4), permeable=0.3, modo_edicion=self.modo_edicion)
+        self.hitboxes_puertas.append(puerta_laseres1)
 
     def destruir(self):
         destroy(self.modelo_visual)
