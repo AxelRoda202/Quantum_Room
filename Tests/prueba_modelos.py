@@ -56,30 +56,41 @@ MODELO_BRAZO_IZQ = 'player/Jugador_particula_arm_right_separado'   # assets/mode
 # MODELO
 # =====================================================
 
-modelo = Entity(
-    model='player/decoracion/casino2_h',
+
+
+"""modelo = Entity(
+    model='player/decoracion/nucleo',
     position=(0, 0, 0),
-    scale=1,
+    scale=(1,1,1), # (x, y, z)
     shader=lit_with_shadows_shader,
     texture='texture_default',
-    color=color.rgb(1, 1, 1), # Un gris base
+    color=color.rgb(0.05, 0.05, 0.05), # Un gris base
     #unlit=True # IMPORTANTE: Ignora luces y materiales defectuosos
 )
 modelo.rotation_y = 180
 
-"""# 1. Creamos un nuevo material
-mi_material = Material()
-
-mi_material.setAmbient((0.2, 0.2, 0.25, 1))  # Un gris oscuro ligeramente azulado para las sombras
-mi_material.setDiffuse((0.5, 0.5, 0.5, 1))   # Gris medio para la luz principal
-mi_material.setSpecular((0.0, 0.0, 0.0, 1))  # Sin brillo plástico
-mi_material.setEmission((0.0, 0.0, 0.0, 1))  # No brilla en la oscuridad
-
-# 3. Aplicamos el material al modelo forzándolo (el '1' es la prioridad)
-modelo.set_material(mi_material, 1)"""
+vidrio = Entity(
+    model='player/decoracion/vidrio_nucleo',
+    position=modelo.position,
+    scale=modelo.scale,
+    shader=lit_with_shadows_shader,
+    texture='texture_default',
+    rotation=modelo.rotation
+)"""
 
 #modelo.set_color_scale((100, 100, 100, 1.0))
 # --- AÑADE ESTO ---
+modelo = Entity(
+    model='player/decoracion/arcade',
+    position=(0, 0, 0),
+    scale=(1,1,1), # (x, y, z)
+    shader=lit_with_shadows_shader,
+    texture='texture_default',
+    color=color.rgb(0.05, 0.05, 0.05),
+    #unlit=True# Un gris base
+    #unlit=True # IMPORTANTE: Ignora luces y materiales defectuosos
+)
+modelo.rotation_y = 180
 # 1. Fuerza al motor a ignorar cualquier transparencia del .glb (el '1' al final fuerza la prioridad)
 modelo.setTransparency(TransparencyAttrib.MNone, 1)
 # 2. Obliga a que el modelo calcule qué caras están delante de las otras
@@ -178,5 +189,8 @@ MIDDLE CLICK = mover
     scale=0.8,
     position=(-0.85,0.45)
 )
+
+rotacion_y = 0
+
 
 app.run()

@@ -43,7 +43,7 @@ class MapaNivel1:
         
         # 1. CARGAR EL MODELO VISUAL
         self.modelo_visual = Entity(
-            model='assets/models/salas/sala1.glb', # C
+            model='assets/models/salas/sala1(2).glb', # C
             position=(0, 0, 0),
             scale=1,
             unlit=True

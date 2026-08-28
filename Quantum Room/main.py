@@ -12,7 +12,7 @@ import random
 from scripts.clases import ObjetoFisico, FuncionOndaCuantica
 from scripts.salas_niveles import MapaNivel1
 
-app = Ursina(title = 'Quantum Room', borderless = False, fullscreen = False) # Fullscreen falso temporal para pruebas
+app = Ursina(title = 'Quantum Room', borderless = False, fullscreen = True) # Fullscreen falso temporal para pruebas
 
 # --- VARIABLES ---
 velocidad_normal = 6
@@ -53,7 +53,8 @@ cuerpo_robot = ObjetoFisico(
     position = spawn,
     collider = 'box',
     shader = lit_with_shadows_shader,
-    masa = 70.0 
+    masa = 70.0,
+    color=color.rgb(0.3,0.3,0.3) 
 )
 cuerpo_robot.setTransparency(TransparencyAttrib.MNone, 1)
 cuerpo_robot.setDepthWrite(True)
@@ -65,7 +66,8 @@ brazo_izq = Entity(
     position = Vec3(0.2,  0.15,  0.0), 
     parent = cuerpo_robot,
     collider = 'box',
-    shader = lit_with_shadows_shader
+    shader = lit_with_shadows_shader,
+    color=color.rgb(0.3,0.3,0.3) 
 )
 brazo_izq.setTransparency(TransparencyAttrib.MNone, 1)
 brazo_izq.setDepthWrite(True)
@@ -77,14 +79,46 @@ brazo_der = Entity(
     position = Vec3( -0.2,  0.15,  0.0),
     parent = cuerpo_robot,
     collider = 'box',
-    shader = lit_with_shadows_shader
+    shader = lit_with_shadows_shader,
+    color=color.rgb(0.3,0.3,0.3) 
 )
 brazo_der.setTransparency(TransparencyAttrib.MNone, 1)
 brazo_der.setDepthWrite(True)
 brazo_der.setDepthTest(True)
 
 # --- CONSTRUCCIÓN DEL MAPA ---
-sala1 = MapaNivel1(modo_edicion=False)
+sala1 = MapaNivel1(modo_edicion=False)  
+
+arcade = Entity(
+    model='assets/models/decoracion/arcade', # Tu modelo 3D
+    position=(-21, 0, -24.8),             # Coordenadas en la sala                    
+    rotation_y = -90,               # Rotación para que mire al jugador
+    scale=2,                          # Ajusta si el modelo es muy grande/chico
+    collider='box',                   # Vital para que el jugador choque contra él
+    color=color.rgb(0.07, 0.07, 0.07),
+                       # O usa el shader que estés usando para el mapa
+    shader = lit_with_shadows_shader
+)
+arcade.setTransparency(TransparencyAttrib.MNone, 1)
+arcade.setDepthWrite(True)
+arcade.setDepthTest(True)
+
+silla_gamer = ObjetoFisico(
+    model='assets/models/decoracion/silla_gamer', # Tu modelo 3D
+    position=(-0.6, 4, -0.4),             # Coordenadas en la sala                    
+    rotation_y = -126,               # Rotación para que mire al jugador
+    scale=2,                          # Ajusta si el modelo es muy grande/chico
+    collider='mesh',                   # Vital para que el jugador choque contra ésl
+    color=color.rgb(5, 5, 5),
+                       # O usa el shader que estés usando para el mapa
+    shader = lit_with_shadows_shader,
+    altura_pies = 1,
+    masa = 5
+)
+
+silla_gamer.setTransparency(TransparencyAttrib.MNone, 1)
+silla_gamer.setDepthWrite(True)
+silla_gamer.setDepthTest(True)
 
 onda = FuncionOndaCuantica(cuerpo_robot, brazo_izq, brazo_der)
 
@@ -203,6 +237,8 @@ def update():
     elif modo_actual == 'libre':
         editor_camera.enabled = True
         cuerpo_robot.visible = not onda.activo
+        
+    print(cuerpo_robot.position)
 
 def input(key):
     global indice_modo, distancia_tercera, fov_primera, altura_aerea, onda

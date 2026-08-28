@@ -4,26 +4,32 @@ loadPrcFileData('', 'load-display p3tinydisplay')
 from ursina.shaders import basic_lighting_shader
 from ursina import *
 from ursina.prefabs.editor_camera import EditorCamera
-from panda3d.core import TransparencyAttrib
+from panda3d.core import TransparencyAttrib, Vec4
 from ursina.shader import Shader
 from ursina.shaders import lit_with_shadows_shader
 app = Ursina()
-
+import os
+from pathlib import Path
+RAIZ_PROYECTO = Path(__file__).resolve().parent.parent
+application.asset_folder = RAIZ_PROYECTO
 # =====================================================
 # MODELO
 # =====================================================
 
 modelo = Entity(
-    model='player/sala1',
+    model='assets/models/salas/sala1(2)',
     position=(0, 0, 0),
     scale=1,
     shader=lit_with_shadows_shader,
-    texture='texture_default'
+    texture='texture_default',
+    color=color.rgb(0.05,0.05,0.05)
 )
 modelo.setTransparency(TransparencyAttrib.MNone, 1)
+
 # 2. Obliga a que el modelo calcule qué caras están delante de las otras
 modelo.setDepthWrite(True)
 modelo.setDepthTest(True)
+
 # --- AÑADE ESTO ---
 
 Entity(

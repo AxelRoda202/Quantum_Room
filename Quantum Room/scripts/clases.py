@@ -1,11 +1,9 @@
 from panda3d.core import loadPrcFileData
 # Fuerza a Panda3D a usar el renderizador por software (ignora la GPU)
 loadPrcFileData('', 'load-display p3tinydisplay')
-from ursina.shaders import basic_lighting_shader
 from ursina import *
 from ursina.prefabs.editor_camera import EditorCamera
 from panda3d.core import TransparencyAttrib, Vec4
-from ursina.shaders import lit_with_shadows_shader
 import math
 import random
 
@@ -22,7 +20,7 @@ class ObjetoFisico(Entity):
         self.fuerza_salto = 10.0 
         
         # --- ALTURA DE LOS PIES ---
-        # Distancia exacta desde el centro geométrico de tu modelo 3D hasta su base.
+        # Distancia exacta desde el centro geométrico del modelo 3D hasta su base.
         self.altura_pies = altura_pies 
 
     def update(self):
@@ -99,7 +97,7 @@ class FuncionOndaCuantica:
         while radio_actual <= self.radio_maximo:
             circunferencia = 2 * math.pi * radio_actual
             num_cubos = int(circunferencia / self.distancia_entre_cubos)
-            
+            #los distribuyo uniformemente
             for i in range(num_cubos):
                 angulo = (i / num_cubos) * (math.pi * 2)
                 offset_x = math.cos(angulo) * radio_actual
@@ -149,7 +147,7 @@ class FuncionOndaCuantica:
             pos_objetivo_z = self.nucleo.z + oz
             direccion_rayo = Vec3(ox, 0, oz)
             
-            # --- NUEVA LÓGICA DE PERMEABILIDAD ---
+            # --- LÓGICA DE PERMEABILIDAD ---
             # Lanzamos el rayo
             rayo = raycast(self.nucleo.position, direccion_rayo.normalized(), distance=dist, ignore=objetos_a_ignorar_basicos)
             
@@ -162,8 +160,6 @@ class FuncionOndaCuantica:
                     entidad.enabled = False
                     continue
                 else: 
-                    # Si la permeabilidad es alta (1.0 - Puerta naranja), el cubo SÍ se dibuja
-                    # Aquí podrías en el futuro hacer que el cubo cambie de color según la permeabilidad
                     entidad.enabled = True
             else:
                 entidad.enabled = True
@@ -183,4 +179,5 @@ class FuncionOndaCuantica:
             entidad.y = 0.05 + (nueva_altura / 2)
             
             a = lerp(0.05, 0.9, probabilidad)
-            entidad.color = Vec4(90/255, 0, 1, a)
+            entidad.color = Vec4(90/255, 0, 2, a)
+            
